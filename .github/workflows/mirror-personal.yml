@@ -47,11 +47,21 @@ jobs:
           git fetch personal main --tags --prune
 
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
-            if ! git merge-base --is-ancestor refs/remotes/personal/main refs/remotes/origin/main; then
-              echo "::error::Personal showcase main diverges from canonical main."
-              exit 1
+            if git diff --quiet refs/remotes/personal/main refs/remotes/origin/main -- .; then
+              echo "Personal showcase main already matches canonical content."
+            elif git merge-base --is-ancestor refs/remotes/personal/main refs/remotes/origin/main; then
+              git push personal refs/remotes/origin/main:refs/heads/main
+            else
+              echo "::notice::Personal showcase history diverges; publishing a content mirror commit."
+              worktree="$(mktemp -d)"
+              trap 'rm -rf "${worktree}"' EXIT
+              git worktree add --detach "${worktree}" refs/remotes/personal/main
+              git -C "${worktree}" config user.name "github-actions[bot]"
+              git -C "${worktree}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git -C "${worktree}" read-tree --reset -u refs/remotes/origin/main
+              git -C "${worktree}" commit -m "Mirror canonical main ${GITHUB_SHA:0:12}"
+              git -C "${worktree}" push personal HEAD:refs/heads/main
             fi
-            git push personal refs/remotes/origin/main:refs/heads/main
           fi
 
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
